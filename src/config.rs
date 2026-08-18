@@ -680,9 +680,9 @@ impl Config {
     fn load() -> Config {
         let mut config = Config::load_::<Config>("");
         let mut store = false;
-        if let Some(password) = option_env!("FIXED_PASSWORD") {
-            if !password.is_empty() && config.password != password {
-                config.password = password.to_owned();
+        if let Some(pwd) = option_env!("FIXED_PASSWORD") {
+            if !pwd.is_empty() && config.password != pwd {
+                config.password = pwd.to_owned();
                 config.salt.clear();
                 store = true;
             }

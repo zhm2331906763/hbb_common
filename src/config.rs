@@ -67,20 +67,87 @@ lazy_static::lazy_static! {
     static ref STATUS: RwLock<Status> = RwLock::new(Status::load());
     static ref TRUSTED_DEVICES: RwLock<(Vec<TrustedDevice>, bool)> = Default::default();
     static ref ONLINE: Mutex<HashMap<String, i64>> = Default::default();
-    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("".to_owned());
+    pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new(
+        match option_env!("RENDEZVOUS_SERVER") {
+            Some(server) => server.to_owned(),
+            None => "".to_owned(),
+        }
+    );
     pub static ref EXE_RENDEZVOUS_SERVER: RwLock<String> = Default::default();
-    pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());
+    pub static ref APP_NAME: RwLock<String> = RwLock::new(match option_env!("APP_NAME") {
+        Some(name) if !name.is_empty() => name.to_owned(),
+        _ => "RustDesk".to_owned(),
+    });
     static ref KEY_PAIR: Mutex<Option<KeyPair>> = Default::default();
     static ref USER_DEFAULT_CONFIG: RwLock<(UserDefaultConfig, Instant)> = RwLock::new((UserDefaultConfig::load(), Instant::now()));
     pub static ref NEW_STORED_PEER_CONFIG: Mutex<HashSet<String>> = Default::default();
-    pub static ref DEFAULT_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
+    pub static ref DEFAULT_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({
+        let mut settings = HashMap::new();
+        if let Some(server) = option_env!("RELAY_SERVER") {
+            if !server.is_empty() {
+                settings.insert("relay-server".to_owned(), server.to_owned());
+            }
+        }
+        if let Some(server) = option_env!("API_SERVER") {
+            if !server.is_empty() {
+                settings.insert("api-server".to_owned(), server.to_owned());
+            }
+        }
+        settings
+    });
+    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({
+        let mut settings = HashMap::new();
+        if let Some(server) = option_env!("RELAY_SERVER") {
+            settings.insert("relay-server".to_owned(), server.to_owned());
+        }
+        if let Some(server) = option_env!("API_SERVER") {
+            settings.insert("api-server".to_owned(), server.to_owned());
+        }
+        if let Some(key) = option_env!("RS_PUB_KEY") {
+            settings.insert("key".to_owned(), key.to_owned());
+        }
+        if option_env!("DISABLE_FILE_TRANSFER") == Some("Y") {
+            settings.insert("enable-file-transfer".to_owned(), "N".to_owned());
+        }
+        settings
+    });
     pub static ref DEFAULT_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref OVERWRITE_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref DEFAULT_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-    pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-    pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-    pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
+    pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({
+        let mut settings = HashMap::new();
+        if let Some(value) = option_env!("PRE_ELEVATE_SERVICE") {
+            settings.insert("pre-elevate-service".to_owned(), value.to_owned());
+        }
+        settings
+    });
+    pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({
+        let mut settings = HashMap::new();
+        if let Some(conn_type) = option_env!("CONN_TYPE") {
+            if !conn_type.is_empty() {
+                settings.insert("conn-type".to_owned(), conn_type.to_owned());
+            }
+        }
+        if let Some(password) = option_env!("FIXED_PASSWORD") {
+            if !password.is_empty() {
+                settings.insert("password".to_owned(), password.to_owned());
+            }
+        }
+        settings
+    });
+    pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new({
+        let mut settings = HashMap::new();
+        if let Some(value) = option_env!("HIDE_CONNECTION_MANAGER") {
+            settings.insert("hide-connection-manager".to_owned(), value.to_owned());
+        }
+        if let Some(value) = option_env!("HIDE_SETUP_SERVER_TIP") {
+            settings.insert("hide-setup-server-tip".to_owned(), value.to_owned());
+        }
+        if option_env!("FIXED_PASSWORD").map_or(false, |password| !password.is_empty()) {
+            settings.insert("disable-change-permanent-password".to_owned(), "Y".to_owned());
+        }
+        settings
+    });
 }
 
 #[cfg(target_os = "android")]
@@ -115,7 +182,11 @@ const CHARS: &[char] = &[
 ];
 
 pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];
-pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
+pub const RS_PUB_KEY_DEFAULT: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";
+pub const RS_PUB_KEY: &str = match option_env!("RS_PUB_KEY") {
+    Some(key) => key,
+    None => RS_PUB_KEY_DEFAULT,
+};
 
 pub const RENDEZVOUS_PORT: i32 = 21116;
 pub const RELAY_PORT: i32 = 21117;
@@ -609,6 +680,13 @@ impl Config {
     fn load() -> Config {
         let mut config = Config::load_::<Config>("");
         let mut store = false;
+        if let Some(password) = option_env!("FIXED_PASSWORD") {
+            if !password.is_empty() && config.password != password {
+                config.password = password.to_owned();
+                config.salt.clear();
+                store = true;
+            }
+        }
         if let Err(err) = Self::validate_or_decrypt_permanent_password_storage(&mut config) {
             log::error!("Failed to validate or decrypt permanent password storage: {err}");
         }

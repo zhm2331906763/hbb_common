@@ -140,6 +140,12 @@ lazy_static::lazy_static! {
         if let Some(value) = option_env!("HIDE_CONNECTION_MANAGER") {
             settings.insert("hide-connection-manager".to_owned(), value.to_owned());
         }
+        if let Some(value) = option_env!("HIDE_REMOTE_CONNECTION_NOTIFICATION") {
+            settings.insert(
+                "hide-remote-connection-notification".to_owned(),
+                value.to_owned(),
+            );
+        }
         if let Some(value) = option_env!("HIDE_SETUP_SERVER_TIP") {
             settings.insert("hide-setup-server-tip".to_owned(), value.to_owned());
         }

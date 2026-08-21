@@ -26,7 +26,10 @@ fn write_windows_custom_build_metadata() {
     let metadata_path = PathBuf::from(env::var("OUT_DIR").unwrap())
         .join("rustdesk_custom_build_metadata.rs");
     println!("cargo:rerun-if-env-changed=RUSTDESK_ENFORCE_CUSTOM_WINDOWS_BUILD");
-    if env::var("RUSTDESK_ENFORCE_CUSTOM_WINDOWS_BUILD").as_deref() != Ok("Y") {
+    if !env::var("RUSTDESK_ENFORCE_CUSTOM_WINDOWS_BUILD")
+        .map(|value| value == "Y")
+        .unwrap_or(false)
+    {
         fs::write(
             metadata_path,
             "pub const CUSTOM_BUILD_MARKER: &str = \"\";\n",

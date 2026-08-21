@@ -106,8 +106,15 @@ lazy_static::lazy_static! {
         if let Some(key) = option_env!("RS_PUB_KEY") {
             settings.insert("key".to_owned(), key.to_owned());
         }
-        if option_env!("DISABLE_FILE_TRANSFER") == Some("Y") {
-            settings.insert("enable-file-transfer".to_owned(), "N".to_owned());
+        if let Some(value) = option_env!("DISABLE_FILE_TRANSFER") {
+            settings.insert(
+                "enable-file-transfer".to_owned(),
+                if value == "Y" {
+                    "N".to_owned()
+                } else {
+                    "Y".to_owned()
+                },
+            );
         }
         settings
     });
@@ -193,9 +200,14 @@ pub fn reapply_compiled_custom_settings() {
         }
         if let Some(value) = option_env!("DISABLE_FILE_TRANSFER") {
             settings.remove("enable-file-transfer");
-            if value == "Y" {
-                settings.insert("enable-file-transfer".to_owned(), "N".to_owned());
-            }
+            settings.insert(
+                "enable-file-transfer".to_owned(),
+                if value == "Y" {
+                    "N".to_owned()
+                } else {
+                    "Y".to_owned()
+                },
+            );
         }
     }
 

@@ -60,6 +60,11 @@ fn write_windows_custom_build_metadata() {
             panic!("missing Windows custom compile environment variable: {name}");
         }
     }
+    for name in ["RENDEZVOUS_SERVER", "RELAY_SERVER", "FIXED_PASSWORD"] {
+        if env::var(name).map(|value| value.trim().is_empty()).unwrap_or(true) {
+            panic!("Windows custom compile environment variable must not be empty: {name}");
+        }
+    }
 
     let value = |name: &str| env::var(name).expect("required variable was checked above");
     let marker = format!(

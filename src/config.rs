@@ -165,6 +165,83 @@ lazy_static::lazy_static! {
     pub static ref APP_DIR: RwLock<String> = Default::default();
 }
 
+/// Restore compile-time client settings after a signed custom client payload has
+/// been loaded. A later installation remains authoritative over old persisted
+/// settings and bundled custom-client values.
+pub fn reapply_compiled_custom_settings() {
+    if let Some(server) = option_env!("RENDEZVOUS_SERVER") {
+        *PROD_RENDEZVOUS_SERVER.write().unwrap() = server.to_owned();
+    }
+    if let Some(name) = option_env!("APP_NAME") {
+        *APP_NAME.write().unwrap() = if name.is_empty() {
+            "RustDesk".to_owned()
+        } else {
+            name.to_owned()
+        };
+    }
+
+    {
+        let mut settings = OVERWRITE_SETTINGS.write().unwrap();
+        if let Some(server) = option_env!("RELAY_SERVER") {
+            settings.insert("relay-server".to_owned(), server.to_owned());
+        }
+        if let Some(server) = option_env!("API_SERVER") {
+            settings.insert("api-server".to_owned(), server.to_owned());
+        }
+        if let Some(key) = option_env!("RS_PUB_KEY") {
+            settings.insert("key".to_owned(), key.to_owned());
+        }
+        if let Some(value) = option_env!("DISABLE_FILE_TRANSFER") {
+            settings.remove("enable-file-transfer");
+            if value == "Y" {
+                settings.insert("enable-file-transfer".to_owned(), "N".to_owned());
+            }
+        }
+    }
+
+    {
+        let mut settings = OVERWRITE_LOCAL_SETTINGS.write().unwrap();
+        if let Some(value) = option_env!("PRE_ELEVATE_SERVICE") {
+            settings.insert("pre-elevate-service".to_owned(), value.to_owned());
+        }
+    }
+
+    {
+        let mut settings = HARD_SETTINGS.write().unwrap();
+        if let Some(value) = option_env!("CONN_TYPE") {
+            settings.remove("conn-type");
+            if !value.is_empty() {
+                settings.insert("conn-type".to_owned(), value.to_owned());
+            }
+        }
+        if let Some(value) = option_env!("FIXED_PASSWORD") {
+            settings.remove("password");
+            if !value.is_empty() {
+                settings.insert("password".to_owned(), value.to_owned());
+            }
+        }
+    }
+
+    {
+        let mut settings = BUILTIN_SETTINGS.write().unwrap();
+        if let Some(value) = option_env!("HIDE_CONNECTION_MANAGER") {
+            settings.insert("hide-connection-manager".to_owned(), value.to_owned());
+        }
+        if let Some(value) = option_env!("HIDE_REMOTE_CONNECTION_NOTIFICATION") {
+            settings.insert(
+                "hide-remote-connection-notification".to_owned(),
+                value.to_owned(),
+            );
+        }
+        if let Some(value) = option_env!("HIDE_SETUP_SERVER_TIP") {
+            settings.insert("hide-setup-server-tip".to_owned(), value.to_owned());
+        }
+        if option_env!("FIXED_PASSWORD").map_or(false, |value| !value.is_empty()) {
+            settings.insert("disable-change-permanent-password".to_owned(), "Y".to_owned());
+        }
+    }
+}
+
 #[cfg(any(target_os = "android", target_os = "ios"))]
 lazy_static::lazy_static! {
     pub static ref APP_HOME_DIR: RwLock<String> = Default::default();
@@ -193,6 +270,12 @@ pub const RS_PUB_KEY: &str = match option_env!("RS_PUB_KEY") {
     Some(key) => key,
     None => RS_PUB_KEY_DEFAULT,
 };
+
+#[cfg(target_os = "windows")]
+include!(concat!(env!("OUT_DIR"), "/rustdesk_custom_build_metadata.rs"));
+
+#[cfg(not(target_os = "windows"))]
+pub const CUSTOM_BUILD_MARKER: &str = "";
 
 pub const RENDEZVOUS_PORT: i32 = 21116;
 pub const RELAY_PORT: i32 = 21117;
@@ -992,12 +1075,12 @@ impl Config {
     }
 
     pub fn get_rendezvous_server() -> String {
-        let mut rendezvous_server = EXE_RENDEZVOUS_SERVER.read().unwrap().clone();
+        let mut rendezvous_server = PROD_RENDEZVOUS_SERVER.read().unwrap().clone();
         if rendezvous_server.is_empty() {
-            rendezvous_server = Self::get_option("custom-rendezvous-server");
+            rendezvous_server = EXE_RENDEZVOUS_SERVER.read().unwrap().clone();
         }
         if rendezvous_server.is_empty() {
-            rendezvous_server = PROD_RENDEZVOUS_SERVER.read().unwrap().clone();
+            rendezvous_server = Self::get_option("custom-rendezvous-server");
         }
         if rendezvous_server.is_empty() {
             rendezvous_server = CONFIG2.read().unwrap().rendezvous_server.clone();
@@ -1015,15 +1098,15 @@ impl Config {
     }
 
     pub fn get_rendezvous_servers() -> Vec<String> {
+        let s = PROD_RENDEZVOUS_SERVER.read().unwrap().clone();
+        if !s.is_empty() {
+            return vec![s];
+        }
         let s = EXE_RENDEZVOUS_SERVER.read().unwrap().clone();
         if !s.is_empty() {
             return vec![s];
         }
         let s = Self::get_option("custom-rendezvous-server");
-        if !s.is_empty() {
-            return vec![s];
-        }
-        let s = PROD_RENDEZVOUS_SERVER.read().unwrap().clone();
         if !s.is_empty() {
             return vec![s];
         }
